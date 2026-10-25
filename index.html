@@ -165,7 +165,7 @@ button.link:hover{background:none;color:var(--mute)}
   <div class="mpcard" role="dialog" aria-modal="true" aria-labelledby="mpTitle">
     <section id="mpMenu">
       <h2 id="mpTitle">Hide &amp; Seek</h2>
-      <p class="mplead">One player seeks. Everyone else draws a hider, tucks it into the scene and keeps moving from room to room. Each room change earns the hider a point and costs the seeker 5 seconds. Up to 10 players, and everyone gets a turn as the seeker.</p>
+      <p class="mplead">One player seeks. Everyone else draws a hider, tucks it into the scene and keeps moving from room to room. Each room change earns the hider a point, but moving takes time and the seeker can spot you on the way. Up to 10 players, and everyone gets a turn as the seeker.</p>
       <label class="mpfield"><span>Your name</span><input id="mpName" maxlength="16" autocomplete="nickname"></label>
       <div class="mprow">
         <button id="mpHostBtn" type="button" class="solid">Host a game</button>
@@ -1874,7 +1874,7 @@ function updateHUD(){const s=fmtT(gTime());if(s!==lastTimeStr){document.getEleme
 const MP={on:false,code:null,uid:null,isHost:false,meta:null,players:{},hiders:{},drawings:{},results:{},refs:[],rrefs:[],round:-1,status:null,sceneKey:null,
   adj:[],anim:{},drag:null,dragId:null,dragPos:null,lastWrite:0,hostDid:'',submitted:false,myDraw:null,lastDraw:null,lastTick:0};
 const MP_THEMES=['factory','school','castle','mall'];
-const PAD_U=40,MIN_A=9,MIN_B=14,MIN_LEN=45,MOVE_EVERY=20,MOVE_PEN=5,MISS_PEN=5,MAX_PLAYERS=10;
+const PAD_U=40,MIN_A=9,MIN_B=14,MIN_LEN=45,MOVE_EVERY=20,MISS_PEN=5,TRAVEL=4000,SETTLE=2000,HIDER_RED='#c8281e',MAX_PLAYERS=10;
 let fbApp=null,fdb=null;
 const byId=id=>document.getElementById(id);
 const mpNow=()=>Date.now()+MP.off_;MP.off_=0;
@@ -1942,8 +1942,8 @@ async function mpEnsureDrawing(){if(MP.drawings[MP.uid]){MP.myDraw=MP.drawings[M
   await mpSubmit(enc)}
 async function mpSubmit(enc){MP.myDraw=padDecode(enc);MP.submitted=true;await gref('drawings/'+MP.meta.round+'/'+MP.uid).set(enc)}
 function mpHidersChanged(v){const m=MP.meta;
-  for(const u in v){const o=MP.hiders[u],n=v[u];if(o&&o.room!==n.room){const p=mpHiderPos(u);if(p)MP.anim[u]={x:p.x,y:p.y,t0:performance.now()}}
-    if(o&&m&&m.status==='seek'&&(n.moves||0)>(o.moves||0))mpFlash((u===MP.uid?'+1 point  ':'')+'−'+MOVE_PEN+' s')}
+  for(const u in v){const o=MP.hiders[u],n=v[u];if(o&&o.room!==n.room&&!n.from){const p=mpHiderPos(u);if(p)MP.anim[u]={x:p.x,y:p.y,t0:performance.now()}}
+    if(o&&m&&m.status==='seek'&&u===MP.uid&&(n.moves||0)>(o.moves||0))mpFlash('+1 point')}
   MP.hiders=v;mpRender()}
 function mpFlash(t){const el=byId('mpPen');el.textContent=t;el.classList.remove('go');void el.offsetWidth;el.classList.add('go')}
 
@@ -1962,30 +1962,34 @@ function roomAt(wx,wy){return rooms.findIndex(r=>wx>=r.x&&wx<=r.x+r.w&&wy>=r.y&&
 function mpClamp(r,d,cx,baseY){const w=d?d.w:20,h=d?d.h:20;const x=Math.max(r.x+w/2+4,Math.min(r.x+r.w-w/2-4,cx)),y=Math.max(r.y+h+18,Math.min(r.y+r.h-1,baseY));return{fx:(x-r.x)/r.w,fy:(y-r.y)/r.h}}
 function mpHiderPos(u){const h=MP.hiders[u],d=MP.drawings[u]||(u===MP.uid?MP.myDraw:null);if(!h||!d||h.room==null)return null;const r=rooms[h.room];if(!r)return null;
   let x=r.x+h.fx*r.w,y=r.y+h.fy*r.h;if(u===MP.uid&&MP.dragPos){x=MP.dragPos.x;y=MP.dragPos.y}
+  const f=h.from,fr=f&&rooms[f.room];if(fr&&!h.found){const k=(mpNow()-(h.movedAt||0))/TRAVEL;if(k<1){const e=k<0?0:k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2,x0=fr.x+f.fx*fr.w,y0=fr.y+f.fy*fr.h;
+    const lift=Math.sin(Math.PI*Math.max(0,k))*Math.min(30,Math.hypot(x-x0,y-y0)*.15);x=x0+(x-x0)*e;y=y0+(y-y0)*e-lift}}
   const a=MP.anim[u];if(a){const k=(performance.now()-a.t0)/900;if(k<1){const e=ease(k);x=a.x+(x-a.x)*e;y=a.y+(y-a.y)*e}else delete MP.anim[u]}
   return{x,y,w:d.w,h:d.h,d}}
+function mpTravelLeft(u){const h=MP.hiders[u];if(!h||!h.from)return 0;return Math.max(0,TRAVEL-(mpNow()-(h.movedAt||0)))}
+function mpWaitLeft(u){const h=MP.hiders[u];if(!h||!h.from)return 0;return Math.max(0,TRAVEL+SETTLE-(mpNow()-(h.movedAt||0)))}
 function mpShaking(u){const m=MP.meta,h=MP.hiders[u];if(!m||m.status!=='seek'||!h||h.found)return false;const s=(mpNow()-Math.max(h.movedAt||0,m.seekStart||0))/1000;return s>=MOVE_EVERY&&(s%MOVE_EVERY)<1}
 function mpVisible(u){const m=MP.meta;if(!m)return false;if(m.status==='results'||m.status==='final')return true;if(u===MP.uid)return true;
   if(isSeeker())return m.status==='seek';if(!isHider())return true;const me=MP.hiders[MP.uid];return !!(me&&me.found)}
 function mpSeekState(){const m=MP.meta,hs=arr(m.hiders);let moves=0,found=0,last=m.seekStart||0;
   for(const u of hs){const h=MP.hiders[u];if(!h)continue;moves+=h.moves||0;if(h.found){found++;last=Math.max(last,h.foundAt||last)}}
-  const all=hs.length>0&&found===hs.length,end=all?last:mpNow(),el=Math.max(0,(end-(m.seekStart||end))/1000),misses=MP.misses||0,pen=MOVE_PEN*moves+MISS_PEN*misses,left=(m.secs||120)-el-pen;
-  return{moves,misses,found,total:hs.length,all,elapsed:el,pen,movePen:MOVE_PEN*moves,missPen:MISS_PEN*misses,left:Math.max(0,left)}}
+  const all=hs.length>0&&found===hs.length,end=all?last:mpNow(),el=Math.max(0,(end-(m.seekStart||end))/1000),misses=MP.misses||0,pen=MISS_PEN*misses,left=(m.secs||120)-el-pen;
+  return{moves,misses,found,total:hs.length,all,elapsed:el,pen,movePen:0,missPen:pen,left:Math.max(0,left)}}
 
 /* drawing in the scene */
 function mpDrawOne(u,p,ring){ctx.save();let ox=0,rot=0;if(mpShaking(u)){const t=performance.now()/1000;ox=Math.sin(t*70)*1.8;rot=Math.sin(t*53)*.14}
   ctx.translate(p.x+ox,p.y-p.h/2);ctx.rotate(rot);ctx.translate(-p.w/2,-p.h/2);ctx.beginPath();
   for(const st of p.d.strokes){st.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));if(st.length===1)ctx.lineTo(st[0][0]+.05,st[0][1])}
-  ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle=PAPER;ctx.lineWidth=2.2;ctx.stroke();ctx.strokeStyle=INK;ctx.lineWidth=1;ctx.stroke();ctx.restore();
+  ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle=PAPER;ctx.lineWidth=2.2;ctx.stroke();ctx.strokeStyle=(u===MP.uid&&!isSeeker())?HIDER_RED:INK;ctx.lineWidth=1;ctx.stroke();ctx.restore();
   if(ring){const r=Math.hypot(p.w,p.h)/2+4;ctx.beginPath();ctx.arc(p.x,p.y-p.h/2,r,0,TAU);ctx.strokeStyle=INK;ctx.lineWidth=LWK*2.4;ctx.stroke()}}
 function mpDrawHiders(){const m=MP.meta;if(!m||!m.hiders||m.status==='draw'||m.status==='lobby')return;
   for(const u of arr(m.hiders)){if(!mpVisible(u))continue;const p=mpHiderPos(u);if(p)mpDrawOne(u,p,!!(MP.hiders[u]&&MP.hiders[u].found))}}
 function mpDrawOverlay(){const m=MP.meta;if(!m||!isHider())return;const me=MP.hiders[MP.uid];if(!me||me.found||(m.status!=='place'&&m.status!=='seek'))return;
   ctx.save();const cur=rooms[me.room];
-  if(cur){ctx.beginPath();ctx.rect(cur.x+3,cur.y+3,cur.w-6,cur.h-6);ctx.strokeStyle=INK;ctx.lineWidth=LWK*4.5;ctx.stroke()}
+  if(cur){ctx.beginPath();ctx.rect(cur.x+3,cur.y+3,cur.w-6,cur.h-6);ctx.strokeStyle=HIDER_RED;ctx.lineWidth=LWK*4.5;ctx.stroke();ctx.strokeStyle=INK}
   if(m.status==='seek'){const pv=rooms[me.prev];if(pv){ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(pv.x+8,pv.y+8);ctx.lineTo(pv.x+pv.w-8,pv.y+pv.h-8);ctx.moveTo(pv.x+pv.w-8,pv.y+8);ctx.lineTo(pv.x+8,pv.y+pv.h-8);ctx.lineWidth=LWK*3;ctx.stroke();ctx.globalAlpha=1}
     ctx.setLineDash([LWK*9,LWK*6]);ctx.lineDashOffset=-performance.now()/1000*LWK*20;ctx.lineWidth=LWK*3;
-    for(const i of mpValidRooms()){const r=rooms[i];ctx.beginPath();ctx.rect(r.x+6,r.y+6,r.w-12,r.h-12);ctx.stroke()}ctx.setLineDash([])}
+    if(!mpWaitLeft(MP.uid))for(const i of mpValidRooms()){const r=rooms[i];ctx.beginPath();ctx.rect(r.x+6,r.y+6,r.w-12,r.h-12);ctx.stroke()}ctx.setLineDash([])}
   ctx.restore()}
 
 /* taps and drags */
@@ -1995,11 +1999,12 @@ function mpTap(sx,sy){const m=MP.meta;if(!m)return;const[wx,wy]=mpWorld(sx,sy);
   if(isSeeker()&&m.status==='seek'){for(const u of arr(m.hiders)){const h=MP.hiders[u];if(!h||h.found)continue;if(mpHit(u,wx,wy)){gref('hiders/'+m.round+'/'+u).update({found:true,foundAt:SERVER_TS()});mpFlash('Found '+mpPname(u)+'!');return}}
     ripples.push({x:sx,y:sy,t:gNow()});gref('misses/'+m.round).set((MP.misses||0)+1);return}
   if(isHider()&&(m.status==='place'||m.status==='seek')){const me=MP.hiders[MP.uid];if(!me||me.found)return;const ri=roomAt(wx,wy);if(ri<0)return;
+    if(m.status==='seek'){const tl=mpTravelLeft(MP.uid),wl=mpWaitLeft(MP.uid);if(tl){mpFlash('Still moving…');return}if(wl&&ri!==me.room){mpFlash('Catch your breath: '+Math.ceil(wl/1000)+' s');return}}
     const d=MP.myDraw||MP.drawings[MP.uid];if(ri===me.room){const p=mpClamp(rooms[ri],d,wx,wy+(d?d.h/2:10));gref('hiders/'+m.round+'/'+MP.uid).update(p);return}
     if(!mpValidRooms().includes(ri)){mpFlash(ri===me.prev?'Not back there!':'Too far away');return}
     const p=mpClamp(rooms[ri],d,wx,wy+(d?d.h/2:10));const upd={room:ri,fx:p.fx,fy:p.fy,movedAt:SERVER_TS()};
-    if(m.status==='seek'){upd.prev=me.room;upd.moves=(me.moves||0)+1}gref('hiders/'+m.round+'/'+MP.uid).update(upd)}}
-function mpDragStart(e){const m=MP.meta;if(!m||!isHider()||(m.status!=='place'&&m.status!=='seek'))return false;const me=MP.hiders[MP.uid];if(!me||me.found)return false;
+    if(m.status==='seek'){upd.prev=me.room;upd.moves=(me.moves||0)+1;const cr=rooms[me.room];upd.from={room:me.room,fx:me.fx,fy:me.fy}}else upd.from=null;gref('hiders/'+m.round+'/'+MP.uid).update(upd)}}
+function mpDragStart(e){const m=MP.meta;if(!m||!isHider()||(m.status!=='place'&&m.status!=='seek'))return false;const me=MP.hiders[MP.uid];if(!me||me.found||mpTravelLeft(MP.uid))return false;
   const[wx,wy]=mpWorld(e.clientX,e.clientY);if(!mpHit(MP.uid,wx,wy,6))return false;const p=mpHiderPos(MP.uid);MP.drag={dx:p.x-wx,dy:p.y-wy};MP.dragPos={x:p.x,y:p.y};return true}
 function mpDragMove(e){const me=MP.hiders[MP.uid],r=me&&rooms[me.room];if(!r)return;const[wx,wy]=mpWorld(e.clientX,e.clientY),d=MP.myDraw||MP.drawings[MP.uid];
   const p=mpClamp(r,d,wx+MP.drag.dx,wy+MP.drag.dy);MP.dragPos={x:r.x+p.fx*r.w,y:r.y+p.fy*r.h};
@@ -2085,7 +2090,7 @@ function mpRender(){if(!MP.on){byId('mpbar').hidden=true;byId('mpside').hidden=t
   else if(st==='seek')showMP(null);
   else if(st==='results'||st==='final'){showMP('mpResults');const r=MP.results[m.round];
     byId('mpResT').textContent=st==='final'?'Final standings':'Round '+(m.round+1)+' of '+(arr(m.order).length);
-    byId('mpResP').textContent=st==='final'?'Everyone has had a turn as the seeker.':r?mpPname(r.seeker)+(r.all?' found everyone with '+fmtS(r.left)+' to spare':' found '+r.found+' of '+r.total+' before time ran out')+'. Penalties: '+(r.movePen||0)+' s from room changes, '+(r.missPen||0)+' s from '+(r.misses||0)+' missed tap'+(r.misses===1?'':'s')+'.':'';
+    byId('mpResP').textContent=st==='final'?'Everyone has had a turn as the seeker.':r?mpPname(r.seeker)+(r.all?' found everyone with '+fmtS(r.left)+' to spare':' found '+r.found+' of '+r.total+' before time ran out')+(r.misses?'. Missed taps cost '+(r.missPen||0)+' s ('+r.misses+' miss'+(r.misses===1?'':'es')+').':'.'):'';
     const b=byId('mpBoard');b.innerHTML='';b.append(mpWinBox(st==='final'),mpBoard());
     byId('mpNext').hidden=!MP.isHost||st==='final';byId('mpAgain').hidden=!MP.isHost||st!=='final';byId('mpWaitNext').hidden=MP.isHost}
   // side list
@@ -2100,7 +2105,7 @@ function mpTick(){const now=performance.now();if(now-MP.lastTick<120)return;MP.l
   if(m.status==='place'){const left=(m.phaseEnd-t)/1000;byId('mpCoverTime').textContent=fmtS(left);setBar('Hiding',fmtS(left),isHider()?'Tap any room to hide in it, then drag your drawing into a sneaky spot. Seeking starts soon.':'Waiting for the hiders.')}
   if(m.status==='seek'){const s=mpSeekState();const me=MP.hiders[MP.uid];let msg='';
     if(isSeeker())msg='Find all '+s.total+' hiders and tap them. A wrong tap costs '+MISS_PEN+' s. Found '+s.found+'/'+s.total+'.';
-    else if(isHider()&&me&&!me.found){const since=(t-Math.max(me.movedAt||0,m.seekStart||0))/1000;msg=mpShaking(MP.uid)?'You are shaking! Move to a dotted room now.':'Move to a dotted room within '+Math.ceil(MOVE_EVERY-(since%MOVE_EVERY))+' s or you will shake. Each move: +1 point for you, −'+MOVE_PEN+' s for the seeker. Your points: '+(me.moves||0)+'.'}
+    else if(isHider()&&me&&!me.found){const since=(t-Math.max(me.movedAt||0,m.seekStart||0))/1000;const tl=mpTravelLeft(MP.uid),wl=mpWaitLeft(MP.uid);msg=tl?'Moving to the next room… arriving in '+Math.ceil(tl/1000)+' s.':wl?'You arrived. You can move again in '+Math.ceil(wl/1000)+' s. Your points: '+(me.moves||0)+'.':mpShaking(MP.uid)?'You are shaking! Move to a dotted room now.':'Move to a dotted room within '+Math.ceil(MOVE_EVERY-(since%MOVE_EVERY))+' s or you will shake. Each move earns 1 point (you are red; the seeker sees you in black). Your points: '+(me.moves||0)+'.'}
     else if(isHider())msg='You were found with '+((me&&me.moves)||0)+' points. Watch the others.';else msg='Watching. Found '+s.found+'/'+s.total+'.';
     setBar(isSeeker()?'Seeker':isHider()?'Hider':'Watching',fmtS(s.left),msg);byId('mpbar').classList.toggle('urgent',s.left<=15)}}
 let barCache='';function setBar(role,time,msg){const k=role+time+msg;if(k===barCache)return;barCache=k;byId('mpRole').textContent=role;byId('mpTime').textContent=time;byId('mpMsg').textContent=msg}
