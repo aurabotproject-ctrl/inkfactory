@@ -1,0 +1,39 @@
+{
+  "rules": {
+    "inkhide": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && data.child('meta/host').val() === auth.uid",
+        "meta": {
+          ".write": "auth != null && (data.exists() ? data.child('host').val() === auth.uid : newData.child('host').val() === auth.uid)"
+        },
+        "players": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        },
+        "drawings": {
+          "$round": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid",
+              ".validate": "newData.child('s').isString() && newData.child('s').val().length < 30000"
+            }
+          }
+        },
+        "hiders": {
+          "$round": {
+            "$uid": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('inkhide').child($code).child('meta/seeker').val() === auth.uid)"
+            }
+          }
+        },
+        "misses": {
+          "$round": {
+            ".write": "auth != null && root.child('inkhide').child($code).child('meta/seeker').val() === auth.uid",
+            ".validate": "newData.isNumber()"
+          }
+        }
+      }
+    }
+  }
+}
