@@ -1957,7 +1957,7 @@ function mpAdjacency(){const n=rooms.length,adj=rooms.map(()=>[]);
   return adj}
 function mpValidRooms(){const me=MP.hiders[MP.uid];const m=MP.meta;if(!me)return[];
   if(m.status==='place')return rooms.map((_,i)=>i).filter(i=>i!==me.room);
-  let v=(MP.adj[me.room]||[]).filter(i=>i!==me.prev);if(!v.length)v=rooms.map((_,i)=>i).filter(i=>i!==me.room&&i!==me.prev);return v}
+  let v=(MP.adj[me.room]||[]).slice();if(!v.length)v=rooms.map((_,i)=>i).filter(i=>i!==me.room);return v}
 function roomAt(wx,wy){return rooms.findIndex(r=>wx>=r.x&&wx<=r.x+r.w&&wy>=r.y&&wy<=r.y+r.h)}
 function mpClamp(r,d,cx,baseY){const w=d?d.w:20,h=d?d.h:20;const x=Math.max(r.x+w/2+4,Math.min(r.x+r.w-w/2-4,cx)),y=Math.max(r.y+h+18,Math.min(r.y+r.h-1,baseY));return{fx:(x-r.x)/r.w,fy:(y-r.y)/r.h}}
 function mpHiderPos(u){const h=MP.hiders[u],d=MP.drawings[u]||(u===MP.uid?MP.myDraw:null);if(!h||!d||h.room==null)return null;const r=rooms[h.room];if(!r)return null;
@@ -1980,14 +1980,15 @@ function mpSeekState(){const m=MP.meta,hs=arr(m.hiders);let moves=0,found=0,last
 function mpDrawOne(u,p,ring){ctx.save();let ox=0,rot=0;if(mpShaking(u)){const t=performance.now()/1000;ox=Math.sin(t*70)*1.8;rot=Math.sin(t*53)*.14}
   ctx.translate(p.x+ox,p.y-p.h/2);ctx.rotate(rot);ctx.translate(-p.w/2,-p.h/2);ctx.beginPath();
   for(const st of p.d.strokes){st.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));if(st.length===1)ctx.lineTo(st[0][0]+.05,st[0][1])}
-  ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle=PAPER;ctx.lineWidth=2.2;ctx.stroke();ctx.strokeStyle=(u===MP.uid&&!isSeeker())?HIDER_RED:INK;ctx.lineWidth=1;ctx.stroke();ctx.restore();
+  ctx.lineCap='round';ctx.lineJoin='round';const mine=u===MP.uid&&!isSeeker();ctx.strokeStyle=PAPER;ctx.lineWidth=mine?3.4:2.2;ctx.stroke();ctx.strokeStyle=mine?HIDER_RED:INK;ctx.lineWidth=mine?1.7:1;ctx.stroke();ctx.restore();
+  if(mine&&!ring){const px=1/cam.s,bob=Math.sin(performance.now()/250)*3*px,ty=p.y-p.h-8*px+bob;ctx.beginPath();ctx.moveTo(p.x,ty);ctx.lineTo(p.x-7*px,ty-12*px);ctx.lineTo(p.x+7*px,ty-12*px);ctx.closePath();ctx.fillStyle=HIDER_RED;ctx.fill();ctx.strokeStyle=PAPER;ctx.lineWidth=1.5*px;ctx.stroke()}
   if(ring){const r=Math.hypot(p.w,p.h)/2+4;ctx.beginPath();ctx.arc(p.x,p.y-p.h/2,r,0,TAU);ctx.strokeStyle=INK;ctx.lineWidth=LWK*2.4;ctx.stroke()}}
 function mpDrawHiders(){const m=MP.meta;if(!m||!m.hiders||m.status==='draw'||m.status==='lobby')return;
   for(const u of arr(m.hiders)){if(!mpVisible(u))continue;const p=mpHiderPos(u);if(p)mpDrawOne(u,p,!!(MP.hiders[u]&&MP.hiders[u].found))}}
 function mpDrawOverlay(){const m=MP.meta;if(!m||!isHider())return;const me=MP.hiders[MP.uid];if(!me||me.found||(m.status!=='place'&&m.status!=='seek'))return;
   ctx.save();const cur=rooms[me.room];
   if(cur){ctx.beginPath();ctx.rect(cur.x+3,cur.y+3,cur.w-6,cur.h-6);ctx.strokeStyle=HIDER_RED;ctx.lineWidth=LWK*4.5;ctx.stroke();ctx.strokeStyle=INK}
-  if(m.status==='seek'){const pv=rooms[me.prev];if(pv){ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(pv.x+8,pv.y+8);ctx.lineTo(pv.x+pv.w-8,pv.y+pv.h-8);ctx.moveTo(pv.x+pv.w-8,pv.y+8);ctx.lineTo(pv.x+8,pv.y+pv.h-8);ctx.lineWidth=LWK*3;ctx.stroke();ctx.globalAlpha=1}
+  if(m.status==='seek'){
     ctx.setLineDash([LWK*9,LWK*6]);ctx.lineDashOffset=-performance.now()/1000*LWK*20;ctx.lineWidth=LWK*3;
     if(!mpWaitLeft(MP.uid))for(const i of mpValidRooms()){const r=rooms[i];ctx.beginPath();ctx.rect(r.x+6,r.y+6,r.w-12,r.h-12);ctx.stroke()}ctx.setLineDash([])}
   ctx.restore()}
@@ -2001,7 +2002,7 @@ function mpTap(sx,sy){const m=MP.meta;if(!m)return;const[wx,wy]=mpWorld(sx,sy);
   if(isHider()&&(m.status==='place'||m.status==='seek')){const me=MP.hiders[MP.uid];if(!me||me.found)return;const ri=roomAt(wx,wy);if(ri<0)return;
     if(m.status==='seek'){const tl=mpTravelLeft(MP.uid),wl=mpWaitLeft(MP.uid);if(tl){mpFlash('Still moving…');return}if(wl&&ri!==me.room){mpFlash('Catch your breath: '+Math.ceil(wl/1000)+' s');return}}
     const d=MP.myDraw||MP.drawings[MP.uid];if(ri===me.room){const p=mpClamp(rooms[ri],d,wx,wy+(d?d.h/2:10));gref('hiders/'+m.round+'/'+MP.uid).update(p);return}
-    if(!mpValidRooms().includes(ri)){mpFlash(ri===me.prev?'Not back there!':'Too far away');return}
+    if(!mpValidRooms().includes(ri)){mpFlash('Too far away. Pick a dotted room.');return}
     const p=mpClamp(rooms[ri],d,wx,wy+(d?d.h/2:10));const upd={room:ri,fx:p.fx,fy:p.fy,movedAt:SERVER_TS()};
     if(m.status==='seek'){upd.prev=me.room;upd.moves=(me.moves||0)+1;const cr=rooms[me.room];upd.from={room:me.room,fx:me.fx,fy:me.fy}}else upd.from=null;gref('hiders/'+m.round+'/'+MP.uid).update(upd)}}
 function mpDragStart(e){const m=MP.meta;if(!m||!isHider()||(m.status!=='place'&&m.status!=='seek'))return false;const me=MP.hiders[MP.uid];if(!me||me.found||mpTravelLeft(MP.uid))return false;
@@ -2065,7 +2066,7 @@ function padBind(){const c=byId('mpPad');
 const fmtS=s=>{s=Math.max(0,Math.ceil(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
 function mpPname(u){const p=MP.players[u];return p?p.name:'Someone'}
 function showMP(which){const ov=byId('mp');for(const id of['mpMenu','mpLobby','mpDraw','mpCover','mpResults'])byId(id).hidden=id!==which;ov.hidden=!which}
-function thumb(d){const c=document.createElement('canvas');c.width=c.height=80;const g=c.getContext('2d');if(d){const k=Math.min(64/d.w,64/d.h,4);g.translate(40-d.w*k/2,40-d.h*k/2);g.scale(k,k);g.lineCap='round';g.lineJoin='round';g.lineWidth=2/k*1.2;g.strokeStyle='#151514';g.beginPath();for(const s of d.strokes)s.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.stroke()}return c}
+function thumb(d,red){const c=document.createElement('canvas');c.width=c.height=80;const g=c.getContext('2d');if(d){const k=Math.min(64/d.w,64/d.h,4);g.translate(40-d.w*k/2,40-d.h*k/2);g.scale(k,k);g.lineCap='round';g.lineJoin='round';g.lineWidth=2/k*1.2;g.strokeStyle=red?HIDER_RED:'#151514';g.beginPath();for(const s of d.strokes)s.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.stroke()}return c}
 function mpStats(){const m=MP.meta,order=m&&m.order?arr(m.order):Object.keys(MP.players),rs=Object.values(MP.results||{});
   return order.map(u=>{const mine=rs.find(r=>r.seeker===u);let pts=0,esc=0;for(const r of rs){if(arr(r.hiders).includes(u)){pts+=(r.hm&&r.hm[u])||0;if(!arr(r.foundU).includes(u))esc++}}
     return{u,name:mpPname(u),seek:mine,pts,esc,sScore:mine?(mine.found/Math.max(1,mine.total))*10000+mine.left:-1}})}
@@ -2096,7 +2097,7 @@ function mpRender(){if(!MP.on){byId('mpbar').hidden=true;byId('mpside').hidden=t
   // side list
   const side=byId('mpside'),list=byId('mpsList');const showSide=st==='place'||st==='seek'||st==='results';side.hidden=!showSide;byId('mpbar').hidden=!(st==='place'||st==='seek');
   if(showSide){list.innerHTML='';byId('mpsHead').textContent=isSeeker()&&st==='seek'?'Find these players':'Hiders';
-    for(const u of arr(m.hiders)){const li=document.createElement('li');const h=MP.hiders[u];if(u===MP.uid||st==='results')li.append(thumb(MP.drawings[u]));else{const dot=document.createElement('i');dot.className='mpsdot';li.append(dot)}const sp=document.createElement('span');sp.textContent=mpPname(u)+(u===MP.uid?' (you)':'');li.append(sp);if(h&&h.found)li.className='found';list.append(li)}
+    for(const u of arr(m.hiders)){const li=document.createElement('li');const h=MP.hiders[u];if(u===MP.uid||st==='results')li.append(thumb(MP.drawings[u],u===MP.uid&&!isSeeker()));else{const dot=document.createElement('i');dot.className='mpsdot';li.append(dot)}const sp=document.createElement('span');sp.textContent=mpPname(u)+(u===MP.uid?' (you)':'');li.append(sp);if(h&&h.found)li.className='found';list.append(li)}
     byId('mpsSeeker').textContent='Seeker: '+mpPname(m.seeker)+(isSeeker()?' (you)':'')}}
 function mpTick(){const now=performance.now();if(now-MP.lastTick<120)return;MP.lastTick=now;const m=MP.meta;if(!m)return;mpHostTick();
   const t=mpNow();
